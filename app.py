@@ -73,8 +73,31 @@ df = load_data()
 watch_stocks = get_watchlist()
 nifty500_list = get_nifty500_tickers()
 
+# --- SIDEBAR: Upload/Download ---
+with st.sidebar:
+    st.header("📂 Data Management")
+    # Download Portfolio
+    if not df.empty:
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Portfolio", csv, PORTFOLIO_FILE, "text/csv")
+    
+    # Upload Portfolio
+    up_file = st.file_uploader("📤 Upload Portfolio CSV", type="csv")
+    if up_file:
+        new_df = pd.read_csv(up_file)
+        new_df.to_csv(PORTFOLIO_FILE, index=False)
+        st.success("Portfolio Updated!")
+        st.rerun()
+    
+    st.divider()
+    # Watchlist Management
+    if watch_stocks:
+        w_txt = "\n".join(watch_stocks)
+        st.download_button("📥 Download Watchlist", w_txt, WATCHLIST_FILE)
+
 st.title("📊 Habeeb's Power Hub v6.9")
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🔍 Heatmap", "💼 Portfolio", "📜 Sold History", "📊 Analytics", "📰 News", "👀 Watchlist"])
+# Remove Sold History Tab as requested
+tab1, tab2, tab4, tab5, tab6 = st.tabs(["🔍 Heatmap", "💼 Portfolio", "📊 Analytics", "📰 News", "👀 Watchlist"])
 
 # --- TAB 1: HEATMAP ---
 with tab1:
@@ -93,24 +116,35 @@ with tab2:
         if not hold_df.empty:
             t_inv, t_val, t_pnl = hold_df['Investment'].sum(), hold_df['CM Value'].sum(), hold_df['P&L'].sum()
             t_today_pnl = hold_df['Today_PnL'].sum()
+            
+            # Today's P&L Percentage Calculation
+            t_prev_val = t_val - t_today_pnl
+            t_today_pct = (t_today_pnl / t_prev_val * 100) if t_prev_val != 0 else 0
+
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Total Investment", f"₹{int(t_inv):,}")
             m2.metric("Current Value", f"₹{int(t_val):,}")
             m3.metric("Total P&L", f"₹{int(t_pnl):,}", f"{((t_pnl/t_inv)*100):.2f}%" if t_inv > 0 else "0%")
-            m4.metric("Today's P&L", f"₹{int(t_today_pnl):,}")
+            # 1. Added Today's P&L % here
+            m4.metric("Today's P&L", f"₹{int(t_today_pnl):,}", f"{t_today_pct:.2f}%")
 
-            view_mode = st.radio("Display Mode:", ["Detailed View", "Summary View"], horizontal=True)
+            # 3. New dropdown for display mode
+            view_mode = st.selectbox("Select View Mode:", ["Summary View", "Detailed View"])
+            
             style_func = lambda x: 'color: green' if isinstance(x, (int, float)) and x > 0 else 'color: red' if isinstance(x, (int, float)) and x < 0 else ''
 
             if view_mode == "Summary View":
+                # 2. Added P&L % Formula in Summary View
                 summ_df = hold_df.groupby(['Name', 'Account']).agg({'Investment':'sum', 'CM Value':'sum', 'P&L':'sum', 'Today_PnL':'sum'}).reset_index()
                 summ_df['Weight %'] = ((summ_df['Investment'] / t_inv) * 100).round(1) if t_inv > 0 else 0
+                summ_df['P&L %'] = ((summ_df['P&L'] / summ_df['Investment']) * 100).round(2)
+                
                 for c in ['Investment', 'CM Value', 'P&L', 'Today_PnL']: summ_df[c] = summ_df[c].astype(int)
-                st.dataframe(summ_df.style.map(style_func, subset=['P&L', 'Today_PnL']), use_container_width=True, hide_index=True)
+                st.dataframe(summ_df.style.map(style_func, subset=['P&L', 'Today_PnL', 'P&L %']), use_container_width=True, hide_index=True)
             else:
                 det_df = hold_df.copy()
                 for c in ["CMP", "Buy Price", "Investment", "CM Value", "P&L", "Today_PnL"]: det_df[c] = det_df[c].astype(int)
-                st.dataframe(det_df.style.map(style_func, subset=['P&L', 'Today_PnL']), use_container_width=True, hide_index=True)
+                st.dataframe(det_df.style.map(style_func, subset=['P&L', 'Today_PnL', 'P_Percentage']), use_container_width=True, hide_index=True)
 
     with st.expander("➕ Add/Remove/Update Stock"):
         c_a, c_b = st.columns(2)
@@ -142,17 +176,6 @@ with tab2:
                 if st.button("➕ Update Dividend"):
                     df.loc[df['Name'] == st_m, 'Dividend'] += div_v
                     df.to_csv(PORTFOLIO_FILE, index=False); st.rerun()
-
-# --- TAB 3: SOLD HISTORY ---
-with tab3:
-    st.subheader("📜 വിറ്റ സ്റ്റോക്കുകളുടെ വിവരങ്ങൾ")
-    sold_df = df[df['Status'] == 'Sold'].copy()
-    if not sold_df.empty:
-        disp_sold = sold_df[['Sell_Date', 'Name', 'QTY Available', 'Buy Price', 'Sell_Price', 'Investment', 'P&L', 'P_Percentage']].copy()
-        disp_sold.columns = ['Sold Date', 'Stock Name', 'Qty', 'Buy Price', 'Sell Price', 'Inv. Value', 'Profit/Loss', 'Gain %']
-        for col in ['Qty', 'Buy Price', 'Sell Price', 'Inv. Value', 'Profit/Loss']: disp_sold[col] = disp_sold[col].astype(int)
-        st.dataframe(disp_sold.style.map(lambda x: 'color: green' if isinstance(x, (int, float)) and x > 0 else 'color: red' if isinstance(x, (int, float)) and x < 0 else '', subset=['Profit/Loss', 'Gain %']), use_container_width=True, hide_index=True)
-    else: st.info("വിറ്റ സ്റ്റോക്കുകളുടെ വിവരങ്ങൾ ലഭ്യമല്ല.")
 
 # --- TAB 4: ANALYTICS ---
 with tab4:
