@@ -200,4 +200,4 @@ with tab6:
                 with open(WATCHLIST_FILE, "w") as f:
                     for i in upd: f.write(i + "\n")
                 st.rerun()
-                
+        
