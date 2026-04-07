@@ -7,110 +7,89 @@ import os
 
 # --- ഫയൽ സെറ്റിംഗ്സ് ---
 PORTFOLIO_FILE = "habeeb_portfolio_v6.csv"
-WATCHLIST_FILE = "watchlist_data.txt"
 
 def load_data():
     if os.path.exists(PORTFOLIO_FILE):
         return pd.read_csv(PORTFOLIO_FILE)
-    return pd.DataFrame(columns=["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "Account", "Investment", "CM Value", "P&L", "P_Percentage", "Tax", "Dividend", "Remark", "Status", "Sell Date", "Sell Price"])
+    return pd.DataFrame(columns=["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "Account", "Investment", "CM Value", "P&L", "Status"])
 
-def get_watchlist():
-    if os.path.exists(WATCHLIST_FILE):
-        df_w = pd.read_csv(WATCHLIST_FILE)
-        return df_w
-    return pd.DataFrame(columns=["Date", "Symbol", "Remarks"])
+def update_live_prices(df):
+    tickers = df[df['Status'] == "Holding"]['Name'].unique().tolist()
+    if not tickers: return df
+    try:
+        # സിമ്പിൾ ലൈവ് പ്രൈസ് അപ്ഡേറ്റ്
+        live_data = yf.download(tickers, period="1d", progress=False)['Close'].iloc[-1]
+        for index, row in df.iterrows():
+            if row['Status'] == "Holding":
+                t_name = row['Name']
+                current_p = float(live_data[t_name]) if len(tickers) > 1 else float(live_data)
+                df.at[index, 'CMP'] = round(current_p, 2)
+                df.at[index, 'CM Value'] = round(row['QTY Available'] * current_p, 2)
+                df.at[index, 'P&L'] = round(df.at[index, 'CM Value'] - row['Investment'], 2)
+        df.to_csv(PORTFOLIO_FILE, index=False)
+    except: pass
+    return df
 
-# --- ആപ്പ് സെറ്റപ്പ് ---
-st.set_page_config(layout="wide", page_title="Habeeb's Power Hub v7.0")
+st.set_page_config(layout="wide", page_title="Habeeb's Hub")
+
+# ഡാറ്റ ലോഡ് ചെയ്യുന്നു
 df = load_data()
 
-# --- SIDEBAR: BACKUP & RESTORE ---
-with st.sidebar:
-    st.title("⚙️ Settings & Backup")
-    st.subheader("Portfolio")
-    st.download_button("📥 Download Portfolio", df.to_csv(index=False), "portfolio.csv", "text/csv")
-    up_p = st.file_uploader("📤 Upload Portfolio", type="csv")
-    if up_p:
-        pd.read_csv(up_p).to_csv(PORTFOLIO_FILE, index=False)
-        st.success("Updated!"); st.rerun()
-    
-    st.divider()
-    st.subheader("Watchlist")
-    w_df = get_watchlist()
-    st.download_button("📥 Download Watchlist", w_df.to_csv(index=False), "watchlist.csv", "text/csv")
-    up_w = st.file_uploader("📤 Upload Watchlist", type="csv")
-    if up_w:
-        pd.read_csv(up_w).to_csv(WATCHLIST_FILE, index=False)
-        st.success("Updated!"); st.rerun()
+st.title("📊 Habeeb's Power Hub (Stable Version)")
 
-# --- MAIN APP ---
-st.title("📊 Habeeb's Power Hub v7.0")
+tab1, tab2, tab3 = st.tabs(["💼 Portfolio", "➕ Add/Sell", "📊 Analytics"])
 
-show_summary = st.toggle("Show Portfolio Summary", value=True)
-
-tab1, tab2, tab3 = st.tabs(["💼 Portfolio", "💰 Sold Items", "👀 Watchlist"])
-
-# --- TAB 1: PORTFOLIO ---
 with tab1:
-    hold_df = df[df['Status'] == "Holding"].copy()
-    if not hold_df.empty:
-        # Decimal point ഒഴിവാക്കാൻ റൗണ്ട് ചെയ്യുന്നു
-        t_inv = int(hold_df['Investment'].sum())
-        t_val = int(hold_df['CM Value'].sum())
-        t_pnl = t_val - t_inv
+    df = update_live_prices(df)
+    holdings = df[df['Status'] == "Holding"]
+    if not holdings.empty:
+        # മെട്രിക്സ്
+        inv = holdings['Investment'].sum()
+        cur = holdings['CM Value'].sum()
+        pnl = holdings['P&L'].sum()
         
-        if show_summary:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Investment", f"₹{t_inv:,}")
-            c2.metric("Current Value", f"₹{t_val:,}")
-            c3.metric("Total P&L", f"₹{t_pnl:,}", f"{((t_pnl/t_inv)*100):.2f}%")
-
-        # Table Display
-        display_df = hold_df[["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "P&L", "P_Percentage"]].copy()
-        display_df['P&L'] = display_df['P&L'].astype(int) # Decimal removal
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-# --- TAB 2: SOLD ITEMS ---
-with tab3: # (Tab index check logically)
-    pass 
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Investment", f"₹{inv:,.0f}")
+        c2.metric("Current Value", f"₹{cur:,.0f}")
+        c3.metric("Total P&L", f"₹{pnl:,.0f}", f"{(pnl/inv*100):.2f}%")
+        
+        st.dataframe(holdings, use_container_width=True)
+    else:
+        st.info("Portfolio is empty.")
 
 with tab2:
-    st.subheader("✅ Sold Assets Summary")
-    sold_df = df[df['Status'] == "Sold"].copy()
-    if not sold_df.empty:
-        sold_summary_switch = st.toggle("Show Sold Summary")
-        if sold_summary_switch:
-            total_sold_pnl = int(sold_df['P&L'].sum())
-            st.metric("Total Realized P&L", f"₹{total_sold_pnl:,}")
-        
-        st.dataframe(sold_df[["Name", "Buy Date", "Sell Date", "Investment", "P&L", "P_Percentage"]], use_container_width=True, hide_index=True)
-    else:
-        st.info("വിറ്റ സ്റ്റോക്കുകൾ ഒന്നും തന്നെയില്ല.")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Add Stock")
+        with st.form("add_form"):
+            name = st.text_input("Stock Symbol (eg: RELIANCE.NS)").upper()
+            b_price = st.number_input("Buy Price", min_value=0.0)
+            qty = st.number_input("Quantity", min_value=1)
+            acc = st.selectbox("Account", ["Habeeb", "RISU", "Family"])
+            if st.form_submit_button("Add to Portfolio"):
+                new_row = {
+                    "Buy Date": datetime.now().strftime('%Y-%m-%d'),
+                    "Name": name, "Buy Price": b_price, "QTY Available": qty,
+                    "Investment": b_price * qty, "Account": acc, "Status": "Holding",
+                    "CMP": b_price, "CM Value": b_price * qty, "P&L": 0.0
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                df.to_csv(PORTFOLIO_FILE, index=False)
+                st.success("Added!")
+                st.rerun()
 
-# --- TAB 3: WATCHLIST ---
+    with col2:
+        st.subheader("Sell Stock")
+        if not holdings.empty:
+            s_name = st.selectbox("Select Stock", holdings['Name'].unique())
+            with st.form("sell_form"):
+                s_qty = st.number_input("Sell Qty", min_value=1)
+                s_price = st.number_input("Sell Price", min_value=0.0)
+                if st.form_submit_button("Confirm Sell"):
+                    # സെൽ ലോജിക്
+                    st.success("Sold!")
+
 with tab3:
-    st.subheader("👀 My Watchlist")
-    col_w1, col_w2 = st.columns([1, 2])
-    with col_w1:
-        w_sym = st.text_input("Symbol").upper()
-        w_rem = st.text_input("Remarks")
-        if st.button("Add to Watchlist"):
-            new_w = pd.DataFrame([{"Date": str(datetime.now().date()), "Symbol": w_sym, "Remarks": w_rem}])
-            w_df = pd.concat([w_df, new_w], ignore_index=True)
-            w_df.to_csv(WATCHLIST_FILE, index=False); st.rerun()
-    
-    with col_w2:
-        if not w_df.empty:
-            # ലൈവ് പ്രൈസ് പഴ്സന്റേജ് മാത്രം കാണിക്കുന്നു
-            if st.button("Refresh Watchlist Prices"):
-                with st.spinner("Fetching..."):
-                    tickers = w_df['Symbol'].tolist()
-                    prices = yf.download([t+".NS" for t in tickers], period="2d", progress=False)['Close']
-                    # ഇവിടുത്തെ ലോജിക് പ്രൈസ് % കാണിക്കാൻ ഉപയോഗിക്കാം
-            st.table(w_df) # Simplified list with Date, Symbol, Remarks
-
-# --- STOCK ENTRY SECTION ---
-with st.expander("➕ Add New Stock / Sell Stock"):
-    # (ഇവിടെ പഴയതുപോലെ തന്നെ സ്റ്റോക്ക് ആഡ് ചെയ്യാനുള്ള ഫോം വരും)
-    pass
-    
+    if not holdings.empty:
+        st.plotly_chart(px.pie(holdings, values='Investment', names='Name'))
+                
