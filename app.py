@@ -181,4 +181,3 @@ with tab5:
                 cols[3].metric("Change %", f"{chg:.2f}%", delta=f"{chg:.2f}%")
                 st.divider()
             except: continue
-    
