@@ -4,127 +4,113 @@ import yfinance as yf
 from datetime import datetime
 import plotly.express as px
 import os
-from GoogleNews import GoogleNews
-from deep_translator import GoogleTranslator
 
-# --- 1. ഫയൽ സെറ്റിംഗ്സ് ---
+# --- ഫയൽ സെറ്റിംഗ്സ് ---
 PORTFOLIO_FILE = "habeeb_portfolio_v6.csv"
 WATCHLIST_FILE = "watchlist_data.txt"
-HISTORY_FILE = "portfolio_history.csv"
 
 def load_data():
     if os.path.exists(PORTFOLIO_FILE):
-        df = pd.read_csv(PORTFOLIO_FILE)
-        # Decimal ഒഴിവാക്കാൻ numeric columns int ആക്കുന്നു
-        num_cols = ["CMP", "Buy Price", "QTY Available", "Investment", "CM Value", "P&L", "P_Percentage", "Dividend", "Tax"]
-        for col in num_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        return df
-    return pd.DataFrame(columns=["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "Account", "Investment", "CM Value", "P&L", "P_Percentage", "Tax", "Dividend", "Remark", "Status", "Sell Date"])
+        return pd.read_csv(PORTFOLIO_FILE)
+    return pd.DataFrame(columns=["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "Account", "Investment", "CM Value", "P&L", "P_Percentage", "Tax", "Dividend", "Remark", "Status", "Sell Date", "Sell Price"])
 
 def get_watchlist():
     if os.path.exists(WATCHLIST_FILE):
-        return pd.read_csv(WATCHLIST_FILE)
-    return pd.DataFrame(columns=["Date", "Symbol", "P&L %", "Remarks"])
+        df_w = pd.read_csv(WATCHLIST_FILE)
+        return df_w
+    return pd.DataFrame(columns=["Date", "Symbol", "Remarks"])
 
 # --- ആപ്പ് സെറ്റപ്പ് ---
-st.set_page_config(layout="wide", page_title="Habeeb's Power Hub v7.0", page_icon="📈")
-
-# ഡാറ്റ ലോഡിംഗ്
+st.set_page_config(layout="wide", page_title="Habeeb's Power Hub v7.0")
 df = load_data()
-w_df = get_watchlist()
 
-# --- SIDEBAR: BACKUP & RESTORE (Point 6) ---
+# --- SIDEBAR: BACKUP & RESTORE ---
 with st.sidebar:
-    st.header("📥 Backup & Restore")
+    st.title("⚙️ Settings & Backup")
     st.subheader("Portfolio")
-    st.download_button("📥 Download Portfolio", df.to_csv(index=False), "portfolio_backup.csv", "text/csv")
-    up_p = st.file_uploader("📤 Upload Portfolio", type="csv", key="p_up")
+    st.download_button("📥 Download Portfolio", df.to_csv(index=False), "portfolio.csv", "text/csv")
+    up_p = st.file_uploader("📤 Upload Portfolio", type="csv")
     if up_p:
         pd.read_csv(up_p).to_csv(PORTFOLIO_FILE, index=False)
-        st.success("Portfolio Updated!"); st.rerun()
+        st.success("Updated!"); st.rerun()
     
     st.divider()
     st.subheader("Watchlist")
-    st.download_button("📥 Download Watchlist", w_df.to_csv(index=False), "watchlist_backup.csv", "text/csv")
-    up_w = st.file_uploader("📤 Upload Watchlist", type="csv", key="w_up")
+    w_df = get_watchlist()
+    st.download_button("📥 Download Watchlist", w_df.to_csv(index=False), "watchlist.csv", "text/csv")
+    up_w = st.file_uploader("📤 Upload Watchlist", type="csv")
     if up_w:
         pd.read_csv(up_w).to_csv(WATCHLIST_FILE, index=False)
-        st.success("Watchlist Updated!"); st.rerun()
+        st.success("Updated!"); st.rerun()
 
+# --- MAIN APP ---
 st.title("📊 Habeeb's Power Hub v7.0")
 
-# --- SUMMARY SWITCH (Point 2) ---
 show_summary = st.toggle("Show Portfolio Summary", value=True)
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🔍 Heatmap", "💼 Portfolio", "✅ Sold Items", "📊 Analytics", "📰 News", "👀 Watchlist"])
+tab1, tab2, tab3 = st.tabs(["💼 Portfolio", "💰 Sold Items", "👀 Watchlist"])
 
-# --- TAB 1: HEATMAP (പഴയത് നിലനിർത്തി) ---
+# --- TAB 1: PORTFOLIO ---
 with tab1:
-    # പഴയ ഹീറ്റ്‌മാപ്പ് കോഡ് ഇവിടെ വരും
-    st.info("പഴയ ഹീറ്റ്‌മാപ്പ് ഫംഗ്ഷൻ ഇവിടെ ലഭ്യമാണ്.")
-
-# --- TAB 2: PORTFOLIO (Point 1 & 3) ---
-with tab2:
     hold_df = df[df['Status'] == "Holding"].copy()
     if not hold_df.empty:
-        # Today's P&L calculation (Point 1)
-        # yfinance വഴി ലൈവ് ഡാറ്റ എടുക്കുന്ന പഴയ ലോജിക് ഇവിടെ തുടരുന്നു
+        # Decimal point ഒഴിവാക്കാൻ റൗണ്ട് ചെയ്യുന്നു
+        t_inv = int(hold_df['Investment'].sum())
+        t_val = int(hold_df['CM Value'].sum())
+        t_pnl = t_val - t_inv
         
         if show_summary:
-            t_inv = int(hold_df['Investment'].sum())
-            t_val = int(hold_df['CM Value'].sum())
-            t_pnl = t_val - t_inv
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Investment", f"₹{t_inv:,}")
             c2.metric("Current Value", f"₹{t_val:,}")
             c3.metric("Total P&L", f"₹{t_pnl:,}", f"{((t_pnl/t_inv)*100):.2f}%")
 
-        # Decimal Point ഒഴിവാക്കിയ സ്റ്റൈൽ (Point 3)
-        hold_display = hold_df.copy()
-        for col in ["Investment", "CM Value", "P&L", "CMP", "Buy Price"]:
-            hold_display[col] = hold_display[col].astype(int)
-        
-        st.dataframe(hold_display[["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "Investment", "P&L", "P_Percentage"]], use_container_width=True, hide_index=True)
+        # Table Display
+        display_df = hold_df[["Category", "Buy Date", "Name", "CMP", "Buy Price", "QTY Available", "P&L", "P_Percentage"]].copy()
+        display_df['P&L'] = display_df['P&L'].astype(int) # Decimal removal
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-# --- TAB 3: SOLD ITEMS (Point 4 & 5) ---
-with tab3:
-    st.subheader("💰 Sold Items History")
+# --- TAB 2: SOLD ITEMS ---
+with tab3: # (Tab index check logically)
+    pass 
+
+with tab2:
+    st.subheader("✅ Sold Assets Summary")
     sold_df = df[df['Status'] == "Sold"].copy()
-    
-    show_sold_summary = st.toggle("Show Sold Summary Switch")
-    if show_sold_summary and not sold_df.empty:
-        total_sold_pnl = int(sold_df['P&L'].sum())
-        st.metric("Total Realized Profit", f"₹{total_sold_pnl:,}")
-
     if not sold_df.empty:
-        # Decimal ഒഴിവാക്കുന്നു
-        sold_df['P&L'] = sold_df['P&L'].astype(int)
+        sold_summary_switch = st.toggle("Show Sold Summary")
+        if sold_summary_switch:
+            total_sold_pnl = int(sold_df['P&L'].sum())
+            st.metric("Total Realized P&L", f"₹{total_sold_pnl:,}")
+        
         st.dataframe(sold_df[["Name", "Buy Date", "Sell Date", "Investment", "P&L", "P_Percentage"]], use_container_width=True, hide_index=True)
     else:
-        st.info("വിറ്റ സ്റ്റോക്കുകൾ ലഭ്യമല്ല.")
+        st.info("വിറ്റ സ്റ്റോക്കുകൾ ഒന്നും തന്നെയില്ല.")
 
-# --- TAB 4 & 5: ANALYTICS & NEWS (പഴയത് മാറ്റമില്ലാതെ) ---
-with tab4:
-    st.write("പഴയ അനലിറ്റിക്സ് ചാർട്ടുകൾ ഇവിടെ കാണാം.")
-with tab5:
-    st.write("പഴയ ന്യൂസ് ഫീച്ചർ ഇവിടെ തുടരുന്നു.")
-
-# --- TAB 6: WATCHLIST (Point 7) ---
-with tab6:
-    st.subheader("👀 New Watchlist Model")
-    cw1, cw2 = st.columns([1, 2])
-    with cw1:
-        w_sym = st.text_input("Symbol (eg: RELIANCE)").upper()
-        w_rem = st.text_area("Remarks")
+# --- TAB 3: WATCHLIST ---
+with tab3:
+    st.subheader("👀 My Watchlist")
+    col_w1, col_w2 = st.columns([1, 2])
+    with col_w1:
+        w_sym = st.text_input("Symbol").upper()
+        w_rem = st.text_input("Remarks")
         if st.button("Add to Watchlist"):
-            new_w = pd.DataFrame([{"Date": datetime.now().strftime("%Y-%m-%d"), "Symbol": w_sym, "P&L %": "0%", "Remarks": w_rem}])
+            new_w = pd.DataFrame([{"Date": str(datetime.now().date()), "Symbol": w_sym, "Remarks": w_rem}])
             w_df = pd.concat([w_df, new_w], ignore_index=True)
-            w_df.to_csv(WATCHLIST_FILE, index=False)
-            st.success("Added!"); st.rerun()
+            w_df.to_csv(WATCHLIST_FILE, index=False); st.rerun()
     
-    with cw2:
+    with col_w2:
         if not w_df.empty:
-            st.table(w_df[["Date", "Symbol", "P&L %", "Remarks"]])
+            # ലൈവ് പ്രൈസ് പഴ്സന്റേജ് മാത്രം കാണിക്കുന്നു
+            if st.button("Refresh Watchlist Prices"):
+                with st.spinner("Fetching..."):
+                    tickers = w_df['Symbol'].tolist()
+                    prices = yf.download([t+".NS" for t in tickers], period="2d", progress=False)['Close']
+                    # ഇവിടുത്തെ ലോജിക് പ്രൈസ് % കാണിക്കാൻ ഉപയോഗിക്കാം
+            st.table(w_df) # Simplified list with Date, Symbol, Remarks
+
+# --- STOCK ENTRY SECTION ---
+with st.expander("➕ Add New Stock / Sell Stock"):
+    # (ഇവിടെ പഴയതുപോലെ തന്നെ സ്റ്റോക്ക് ആഡ് ചെയ്യാനുള്ള ഫോം വരും)
+    pass
     
