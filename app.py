@@ -218,4 +218,3 @@ with tab6:
     if st.button("Add to Watchlist"):
         with open(WATCHLIST_FILE, "a") as f: f.write(w_sym + ".NS\n")
         st.success(f"{w_sym} added to Watchlist!")
-        
